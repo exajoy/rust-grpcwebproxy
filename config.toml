@@ -1,4 +1,4 @@
-[target.x86_64-unknown-linux-musl]
+[target.x86_64-unknown-linux-musl.release]
 linker = "zig"
 rustflags = ["-C", "link-arg=-target", "-C", "link-arg=x86_64-linux-musl"]
 
