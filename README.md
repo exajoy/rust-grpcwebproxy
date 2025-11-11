@@ -10,4 +10,7 @@ cargo build --release
 
 ```ssh
 cargo test --feature test
+
 ```
+
+## Installation

@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - v*.*.*
+
+jobs:
+  rust-release-build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            name: Rust Release Build on Linux
+            x86_64-target: x86_64-unknown-linux-musl
+            aarch64-target: aarch64-unknown-linux-musl
+
+          - os: macos-latest
+            name: Rust Release Build on MacOS
+            x86_64-target: x86_64-apple-darwin
+            aarch64-target: aarch64-apple-darwin
+
+          - os: windows-latest
+            name: Rust Release Build on Windows
+            x86_64-target: x86_64-pc-windows-msvc
+            aarch64-target: aarch64-pc-windows-msvc
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Build x86_64 target in release mode
+        uses: houseabsolute/actions-rust-cross@v1
+        with:
+          target: ${{ matrix.x86_64-target }}
+          args: "--release --locked"
+
+      - name: Build aarch64 target in release mode
+        uses: houseabsolute/actions-rust-cross@v1
+        with:
+          target: ${{ matrix.aarch64-target }}
+          args: "--release --locked"
+
+      - name: Get latest release version number
+        id: get_version
+        uses: battila7/get-version-action@v2
+
+      - name: Create x86_64 zip file on Windows
+        if: ${{ matrix.os == 'windows-latest' }}
+        run: |
+          choco install zip
+          cd target/${{ matrix.x86_64-target }}/release
+          zip grex-${{ steps.get_version.outputs.version }}-${{ matrix.x86_64-target }}.zip grex.exe
+          cd ../../..
+
+      - name: Create aarch64 zip file on Windows
+        if: ${{ matrix.os == 'windows-latest' }}
+        run: |
+          cd target/${{ matrix.aarch64-target }}/release
+          zip grex-${{ steps.get_version.outputs.version }}-${{ matrix.aarch64-target }}.zip grex.exe
+          cd ../../..
+
+      - name: Create x86_64 tar.gz file on Linux and macOS
+        if: ${{ matrix.os != 'windows-latest' }}
+        run: |
+          chmod +x target/${{ matrix.x86_64-target }}/release/grex
+          tar -zcf target/${{ matrix.x86_64-target }}/release/grex-${{ steps.get_version.outputs.version }}-${{ matrix.x86_64-target }}.tar.gz -C target/${{ matrix.x86_64-target }}/release grex
+
+      - name: Create aarch64 tar.gz file on Linux and macOS
+        if: ${{ matrix.os != 'windows-latest' }}
+        run: |
+          chmod +x target/${{ matrix.aarch64-target }}/release/grex
+          tar -zcf target/${{ matrix.aarch64-target }}/release/grex-${{ steps.get_version.outputs.version }}-${{ matrix.aarch64-target }}.tar.gz -C target/${{ matrix.aarch64-target }}/release grex
+
+      - name: Upload release and assets to GitHub
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref }}
+          release_name: grex ${{ steps.get_version.outputs.version-without-v }}
+          file_glob: true
+          file: target/*/release/grex-${{ steps.get_version.outputs.version }}-*.{zip,tar.gz}
