@@ -1,22 +1,7 @@
 use futures_util::StreamExt;
-use rgrpcwebproxy::{
-    start_proxy,
-    test_support::{
-        greeter::{
-            MyGreeter,
-            hello_world::{
-                HelloRequest, greeter_client::GreeterClient, greeter_server::GreeterServer,
-            },
-        },
-        preparation::run_intergration,
-    },
-};
-use tokio::{
-    sync::{
-        oneshot::{self, Sender},
-        watch,
-    },
-    task::JoinHandle,
+use griffin::test_support::{
+    greeter::hello_world::{HelloRequest, greeter_client::GreeterClient},
+    preparation::run_intergration,
 };
 use tonic::Request;
 use tower::BoxError;

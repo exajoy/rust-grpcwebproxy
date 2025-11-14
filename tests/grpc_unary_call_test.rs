@@ -1,4 +1,4 @@
-use rgrpcwebproxy::{
+use griffin::{
     start_proxy,
     test_support::{
         greeter::{

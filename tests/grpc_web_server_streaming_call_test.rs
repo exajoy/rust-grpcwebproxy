@@ -16,7 +16,7 @@ use prost::Message;
 use tonic::Request;
 use tonic_web::GrpcWebClientLayer;
 
-use rgrpcwebproxy::{
+use griffin::{
     forward, incoming_to_stream_body,
     test_support::{
         greeter::hello_world::{HelloReply, HelloRequest, greeter_client::GreeterClient},

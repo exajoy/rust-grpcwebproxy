@@ -1,19 +1,27 @@
 use async_stream::try_stream;
 use bytes::{BufMut, Bytes, BytesMut};
 use futures_core::Stream;
+use http::StatusCode;
 use http::{HeaderMap, HeaderValue, Request, Response, Uri, header::CONTENT_TYPE, uri::Authority};
-use http_body::Frame;
-use http_body_util::{BodyExt, StreamBody};
+use http_body::{Body, Frame};
+use http_body_util::{BodyExt, Full, StreamBody};
 use hyper::{body::Incoming, client::conn::http2};
 use hyper_util::server::conn::auto::Builder as AutoBuilder;
 use hyper_util::{
     rt::{TokioExecutor, TokioIo},
     service::TowerToHyperService,
 };
+use prometheus::{
+    CounterVec, Encoder, HistogramVec, TextEncoder, register_counter_vec, register_histogram_vec,
+};
+use scopeguard::defer;
+use std::convert::Infallible;
 use std::pin::Pin;
 use std::str::FromStr;
+use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
+use tokio::time::Instant;
 use tower::BoxError;
 
 #[cfg(any(test, feature = "test-support"))]
@@ -30,6 +38,7 @@ type StreamResponse = Response<StreamBody<DynStream>>;
 pub async fn forward<B>(
     req: Request<B>,
     authority: Authority,
+    metrics: Arc<Metrics>,
 ) -> Result<
     Response<StreamBody<impl Stream<Item = Result<Frame<Bytes>, hyper::Error>> + Send>>,
     BoxError,
@@ -45,7 +54,23 @@ where
         .headers
         .insert(hyper::header::HOST, authority.as_str().parse()?);
 
-    let path = parts.uri.path();
+    let path = parts.uri.path().to_string();
+    // Early exit for /metrics
+    if path == "/metrics" {
+        return Ok(metrics.render());
+    }
+    let start = Instant::now();
+    defer!({
+        let elapsed = start.elapsed().as_secs_f64();
+        metrics
+            .requests_total
+            .with_label_values(&[&"POST", &path.as_str()])
+            .inc();
+        metrics
+            .request_duration
+            .with_label_values(&[&"POST", &path.as_str()])
+            .observe(elapsed);
+    });
     let url = format!("http://{}{}", authority.as_ref(), path);
 
     parts.uri = Uri::from(url.parse::<Uri>().unwrap());
@@ -175,6 +200,15 @@ pub fn incoming_to_stream_body(mut body: Incoming) -> StreamBody<DynStream> {
     };
     return StreamBody::new(Box::pin(forward_stream));
 }
+pub fn full_to_stream_body(mut body: Full<Bytes>) -> StreamBody<DynStream> {
+    let forward_stream = try_stream! {
+        while let Some(frame) = body.frame().await {
+            let frame = frame.map_err(|e: Infallible| -> hyper::Error { match e {} })?;
+            yield frame;
+        }
+    };
+    return StreamBody::new(Box::pin(forward_stream));
+}
 
 fn encode_trailers(trailers: &HeaderMap) -> Vec<u8> {
     trailers.iter().fold(Vec::new(), |mut acc, (key, value)| {
@@ -204,29 +238,28 @@ fn make_trailers_frame(trailers: &HeaderMap) -> Bytes {
 }
 
 pub async fn start_proxy(
-    //proxy_address: &str,
     listener: TcpListener,
     forward_authority: String,
     mut shutdown_rx: watch::Receiver<bool>,
-    // mut ready_tx: tokio::sync::oneshot::Sender<()>,
 ) -> Result<(), BoxError> {
     let forward_authority = Authority::from_str(&forward_authority)?;
-    // let listener = TcpListener::bind(proxy_address).await?;
-    // ready_tx.send(())?;
-    // ready_tx.send(()).ok();
+    let metrics = Arc::new(Metrics::new());
     loop {
         tokio::select! {
             accept_result = listener.accept() => {
                 match accept_result {
                     Ok((stream, _)) => {
                         let io = TokioIo::new(stream);
+                        let metrics = metrics.clone();
                         let forward_authority = forward_authority.clone();
                         tokio::task::spawn(async move {
 
                             let forward_authority = forward_authority.clone();
+                            let metrics = metrics.clone();
                             let svc = tower::service_fn(move |req| {
                                 let forward_authority = forward_authority.clone();
-                                forward(req, forward_authority)
+                                let metrics = metrics.clone();
+                                forward(req, forward_authority, metrics)
                             });
                             let svc = TowerToHyperService::new(svc);
                             if let Err(err) = AutoBuilder::new(TokioExecutor::new())
@@ -250,25 +283,47 @@ pub async fn start_proxy(
                 }
             }
         }
-        // let (stream, _) = listener.accept().await?;
-        // let io = TokioIo::new(stream);
-        // let forward_authority = forward_authority.clone();
-        // tokio::task::spawn(async move {
-        //     let forward_authority = forward_authority.clone();
-        //     let svc = tower::service_fn(move |req| {
-        //         let forward_authority = forward_authority.clone();
-        //         forward(req, forward_authority)
-        //     });
-        //     let svc = TowerToHyperService::new(svc);
-        //     if let Err(err) = AutoBuilder::new(TokioExecutor::new())
-        //         .serve_connection(io, svc)
-        //         .await
-        //     {
-        //         eprintln!("Error serving connection: {:?}", err);
-        //     }
-        // });
     }
     drop(listener);
     Ok(())
-    // listener.match
+}
+
+#[derive(Clone)]
+pub struct Metrics {
+    requests_total: CounterVec,
+    request_duration: HistogramVec,
+}
+
+impl Metrics {
+    fn new() -> Self {
+        Self {
+            requests_total: register_counter_vec!(
+                "http_requests_total",
+                "Total number of HTTP requests handled",
+                &["method", "path"]
+            )
+            .unwrap(),
+            request_duration: register_histogram_vec!(
+                "http_request_duration_seconds",
+                "Request duration in seconds",
+                &["method", "path"]
+            )
+            .unwrap(),
+        }
+    }
+
+    fn render(&self) -> StreamResponse {
+        let encoder = TextEncoder::new();
+        let metric_families = prometheus::gather();
+        let mut buffer = Vec::new();
+        encoder.encode(&metric_families, &mut buffer).unwrap();
+
+        let res = Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", encoder.format_type())
+            .body(Full::<Bytes>::from(Bytes::from(buffer)))
+            .unwrap();
+        let res = res.map(|body| full_to_stream_body(body));
+        res
+    }
 }

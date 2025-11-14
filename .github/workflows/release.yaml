@@ -57,33 +57,33 @@ jobs:
         run: |
           choco install zip
           cd target/${{ matrix.x86_64-target }}/release
-          zip rgrpcwebproxy-${{ steps.get_version.outputs.version }}-${{ matrix.x86_64-target }}.zip rgrpcwebproxy.exe
+          zip griffin-${{ steps.get_version.outputs.version }}-${{ matrix.x86_64-target }}.zip griffin.exe
           cd ../../..
 
       - name: Create aarch64 zip file on Windows
         if: ${{ matrix.os == 'windows-latest' }}
         run: |
           cd target/${{ matrix.aarch64-target }}/release
-          zip rgrpcwebproxy-${{ steps.get_version.outputs.version }}-${{ matrix.aarch64-target }}.zip rgrpcwebproxy.exe
+          zip griffin-${{ steps.get_version.outputs.version }}-${{ matrix.aarch64-target }}.zip griffin.exe
           cd ../../..
 
       - name: Create x86_64 tar.gz file on Linux and macOS
         if: ${{ matrix.os != 'windows-latest' }}
         run: |
-          chmod +x target/${{ matrix.x86_64-target }}/release/rgrpcwebproxy
-          tar -zcf target/${{ matrix.x86_64-target }}/release/rgrpcwebproxy-${{ steps.get_version.outputs.version }}-${{ matrix.x86_64-target }}.tar.gz -C target/${{ matrix.x86_64-target }}/release rgrpcwebproxy
+          chmod +x target/${{ matrix.x86_64-target }}/release/griffin
+          tar -zcf target/${{ matrix.x86_64-target }}/release/griffin-${{ steps.get_version.outputs.version }}-${{ matrix.x86_64-target }}.tar.gz -C target/${{ matrix.x86_64-target }}/release griffin
 
       - name: Create aarch64 tar.gz file on Linux and macOS
         if: ${{ matrix.os != 'windows-latest' }}
         run: |
-          chmod +x target/${{ matrix.aarch64-target }}/release/rgrpcwebproxy
-          tar -zcf target/${{ matrix.aarch64-target }}/release/rgrpcwebproxy-${{ steps.get_version.outputs.version }}-${{ matrix.aarch64-target }}.tar.gz -C target/${{ matrix.aarch64-target }}/release rgrpcwebproxy
+          chmod +x target/${{ matrix.aarch64-target }}/release/griffin
+          tar -zcf target/${{ matrix.aarch64-target }}/release/griffin-${{ steps.get_version.outputs.version }}-${{ matrix.aarch64-target }}.tar.gz -C target/${{ matrix.aarch64-target }}/release griffin
 
       - name: Upload release and assets to GitHub
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ github.ref }}
-          release_name: rgrpcwebproxy ${{ steps.get_version.outputs.version-without-v }}
+          release_name: griffin ${{ steps.get_version.outputs.version-without-v }}
           file_glob: true
-          file: target/*/release/rgrpcwebproxy-${{ steps.get_version.outputs.version }}-*.{zip,tar.gz}
+          file: target/*/release/griffin-${{ steps.get_version.outputs.version }}-*.{zip,tar.gz}

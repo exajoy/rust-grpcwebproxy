@@ -1,1 +1,1 @@
-allow = ["manual_async_fn"]
+# allow = ["manual_async_fn"]

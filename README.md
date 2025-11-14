@@ -3,8 +3,8 @@
 ## Build from source
 
 ```ssh
-git clone https://github.com/exajoy/rgrpcwebproxy
-cd rgrpcwebproxy
+git clone https://github.com/exajoy/griffin
+cd griffin
 cargo build --release
 
 ```

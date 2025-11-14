@@ -13,7 +13,7 @@ use hyper::{body::Incoming, service::Service};
 use hyper_util::{client::legacy::Client, rt::TokioExecutor, service::TowerToHyperService};
 use prost::Message;
 
-use rgrpcwebproxy::{
+use griffin::{
     forward, incoming_to_stream_body,
     test_support::{
         greeter::hello_world::{HelloReply, HelloRequest},

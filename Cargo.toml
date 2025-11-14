@@ -1,5 +1,5 @@
 [package]
-name = "rgrpcwebproxy"
+name = "griffin"
 version = "0.1.0"
 edition = "2024"
 
@@ -31,13 +31,15 @@ tokio-stream = { version = "0.1.17", features = ["io-util"], optional = true }
 tonic = { version = "0.14.2", optional = true }
 tonic-web = { version = "0.14.2", optional = true }
 tonic-prost = { version = "0.14.2", optional = true }
+prometheus = "0.14.0"
+scopeguard = "1.2.0"
 
 [dev-dependencies]
-httptest = "0.16.3"
+# httptest = "0.16.3"
 
 [build-dependencies]
-tonic-build = { version = "0.14.2", optional = false }
-tonic-prost-build = { version = "0.14.2", optional = false }
+tonic-build = { version = "0.14.2", optional = true }
+tonic-prost-build = { version = "0.14.2", optional = true }
 
 [features]
 test-support = [
@@ -47,6 +49,6 @@ test-support = [
   "tonic",
   "tonic-prost",
   "tonic-web",
-  # "tonic-build",
-  # "tonic-prost-build",
+  "tonic-build",
+  "tonic-prost-build",
 ]
