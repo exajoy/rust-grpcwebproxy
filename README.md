@@ -1,7 +1,4 @@
-<!-- ![Alt text](misc/logo/logo.png) -->
-<p align="center">
-  <img src="misc/logo/logo.png" width="100" />
-</p>
+<img src="misc/logo/logo.png" width="200" />
 
 # Griffin
 
