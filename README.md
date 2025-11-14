@@ -33,6 +33,7 @@ grpc client <--> griffin <--> grpc server
 #### Requirements
 
 rustc 1.91.0
+
 cargo 1.81.0
 
 #### Commands
