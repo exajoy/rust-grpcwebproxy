@@ -7,8 +7,8 @@ However, the current solutions of converting gRPRC-Web to gRPC, such as Envoy,
 are often too large and complex for lightweight applications.
 
 Griffin is a lightweight proxy built on top of hyper.rs that translate gRPC-web to standard gRPC requests.
-Griffin's binary is only 2.5MB, **100x smaller** than Envoy's binary (250MB+) and **30x smaller**
-than grpcwebproxy 15.3MB) **without garbage collection**.
+Griffin's binary is only [1MB](https://github.com/exajoy/griffin/releases), **100x smaller** than Envoy's binary [(140MB+)](https://hub.docker.com/r/envoyproxy/envoy/tags?name=dev) and **15x smaller**
+than grpcwebproxy [(15.3MB)](https://github.com/improbable-eng/grpc-web/releases) **without garbage collection**.
 
 ## Features
 
