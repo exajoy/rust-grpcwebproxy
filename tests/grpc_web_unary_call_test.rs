@@ -4,11 +4,11 @@ use futures_util::StreamExt;
 use http::{Request, uri::Authority};
 use http_body::{Body, Frame};
 use http_body_util::{Full, StreamBody};
-use httptest::{
-    Expectation, Server, all_of,
-    matchers::{contains, request},
-    responders::{json_encoded, status_code},
-};
+// use httptest::{
+//     Expectation, Server, all_of,
+//     matchers::{contains, request},
+//     responders::{json_encoded, status_code},
+// };
 use hyper::{body::Incoming, service::Service};
 use hyper_util::{client::legacy::Client, rt::TokioExecutor, service::TowerToHyperService};
 use prost::Message;
@@ -18,7 +18,7 @@ use griffin::{
     test_support::{
         greeter::hello_world::{HelloReply, HelloRequest},
         preparation::run_intergration,
-        utils::{message_to_frame, parse_grpc_stream},
+        utils::{collect_messages, message_to_frame},
     },
 };
 use tower::BoxError;
@@ -43,7 +43,7 @@ async fn test_grpc_web_unary_call() -> Result<(), BoxError> {
         let res = res.map(|body| incoming_to_stream_body(body));
         assert_eq!(res.status(), 200);
         let mut body = res.into_body();
-        let messages: Vec<HelloReply> = parse_grpc_stream(body).await.unwrap();
+        let messages: Vec<HelloReply> = collect_messages(body).await.unwrap();
         assert_eq!(messages.len(), 1);
         assert_eq!(messages.first().unwrap().message, "Hello Alice!");
 

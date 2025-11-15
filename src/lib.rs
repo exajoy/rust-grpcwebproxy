@@ -73,7 +73,7 @@ where
     });
     let url = format!("http://{}{}", authority.as_ref(), path);
 
-    parts.uri = Uri::from(url.parse::<Uri>().unwrap());
+    parts.uri = url.parse::<Uri>()?;
 
     // println!("Forward URL: {}", parts.uri);
     // println!("Authority: {}", authority);
@@ -99,19 +99,17 @@ where
     if let Some(value) = parts.headers.get(CONTENT_TYPE)
         && value == "application/grpc"
     {
-        return forward_grpc(sender, parts, req_body).await;
+        return return_grpc(sender, parts, req_body).await;
     }
-    return forward_grpc_web(sender, parts, req_body).await;
+    return_grpc_web(sender, parts, req_body).await
 }
 
-async fn forward_grpc_web<B>(
+async fn return_grpc_web<B>(
     mut sender: http2::SendRequest<B>,
     parts: http::request::Parts,
     req_body: B,
 ) -> Result<StreamResponse, BoxError>
 where
-    // B: Body,
-    // B: Body + Send + 'static,
     B: hyper::body::Body<Data = Bytes> + Send + 'static,
     B::Error: Into<BoxError>,
 {
@@ -130,28 +128,19 @@ where
     let fut = sender.send_request(req);
     let res = fut.await.map_err(Into::<BoxError>::into).map(|res| {
         let (parts, body) = res.into_parts();
-        let res = Response::from_parts(parts, body);
-        res
+        Response::from_parts(parts, body)
     })?;
 
-    // println!("Status: {}", res.status());
-    // println!("Initial headers:");
-    // for (key, value) in res.headers() {
-    //     println!("  {}: {:?}", key, value);
-    // }
     // Read body data
     let (parts, mut body) = res.into_parts();
 
     let forward_stream = try_stream! {
         while let Some(frame) = body.frame().await {
             let frame = frame?;
+            // if there is a trailer, convert it into data frame and send
             if let Some(trailers) = frame.trailers_ref() {
-                for (k, v) in trailers.iter() {
-                    println!("  {}: {:?}", k, v);
-                }
-                let trailer_frame = make_trailers_frame(trailers);
-                // print_bytes_as_hex(&trailer_frame);
-                yield Frame::data(trailer_frame.clone());
+                let trailers = Trailers::new(trailers.clone());
+                yield Frame::data(trailers.into_to_frame());
             } else {
                 if let Some(_data) = frame.data_ref() {
                     // println!("Data: {:?}", data);
@@ -161,17 +150,18 @@ where
         }
     };
     let boxed_stream: DynStream = Box::pin(forward_stream);
-    // Convert stream into a Hyper body (chunked automatically)
     let body = StreamBody::new(boxed_stream);
+
+    // trailers is splitted from body
     let mut res = Response::from_parts(parts, body);
     res.headers_mut().insert(
         "content-type",
         "application/grpc-web+proto".parse().unwrap(),
     );
-    return Ok(res);
+    Ok(res)
 }
 
-async fn forward_grpc<B>(
+async fn return_grpc<B>(
     mut sender: http2::SendRequest<B>,
     parts: http::request::Parts,
     req_body: B,
@@ -185,10 +175,11 @@ where
     let req = Request::from_parts(parts, req_body);
     let res = sender.send_request(req).await?;
 
-    // convert type Incoming to StreamBody<DynStream>
+    //1.convert type Incoming to StreamBody<DynStream>
     // this does not affect the logic
-    let res = res.map(|body| incoming_to_stream_body(body));
-    return Ok(res);
+    //2.no need to process trailer
+    let res = res.map(incoming_to_stream_body);
+    Ok(res)
 }
 
 pub fn incoming_to_stream_body(mut body: Incoming) -> StreamBody<DynStream> {
@@ -198,8 +189,9 @@ pub fn incoming_to_stream_body(mut body: Incoming) -> StreamBody<DynStream> {
             yield frame;
         }
     };
-    return StreamBody::new(Box::pin(forward_stream));
+    StreamBody::new(Box::pin(forward_stream))
 }
+
 pub fn full_to_stream_body(mut body: Full<Bytes>) -> StreamBody<DynStream> {
     let forward_stream = try_stream! {
         while let Some(frame) = body.frame().await {
@@ -207,7 +199,7 @@ pub fn full_to_stream_body(mut body: Full<Bytes>) -> StreamBody<DynStream> {
             yield frame;
         }
     };
-    return StreamBody::new(Box::pin(forward_stream));
+    StreamBody::new(Box::pin(forward_stream))
 }
 
 fn encode_trailers(trailers: &HeaderMap) -> Vec<u8> {
@@ -221,20 +213,28 @@ fn encode_trailers(trailers: &HeaderMap) -> Vec<u8> {
 }
 
 const FRAME_HEADER_SIZE: usize = 5;
-// 8th (MSB) bit of the 1st gRPC frame byte
-// denotes an uncompressed trailer (as part of the body)
 const GRPC_WEB_TRAILERS_BIT: u8 = 0b10000000;
-fn make_trailers_frame(trailers: &HeaderMap) -> Bytes {
-    let trailers = encode_trailers(trailers);
-    let len = trailers.len();
-    assert!(len <= u32::MAX as usize);
 
-    let mut frame = BytesMut::with_capacity(len + FRAME_HEADER_SIZE);
-    frame.put_u8(GRPC_WEB_TRAILERS_BIT);
-    frame.put_u32(len as u32);
-    frame.put_slice(&trailers);
+struct Trailers {
+    inner: HeaderMap,
+}
+impl Trailers {
+    fn new(inner: HeaderMap) -> Self {
+        Self { inner }
+    }
 
-    frame.freeze()
+    fn into_to_frame(self) -> Bytes {
+        let trailers = encode_trailers(&self.inner);
+        let len = trailers.len();
+        assert!(len <= u32::MAX as usize);
+
+        let mut frame = BytesMut::with_capacity(len + FRAME_HEADER_SIZE);
+        frame.put_u8(GRPC_WEB_TRAILERS_BIT);
+        frame.put_u32(len as u32);
+        frame.put_slice(&trailers);
+
+        frame.freeze()
+    }
 }
 
 pub async fn start_proxy(
@@ -323,7 +323,6 @@ impl Metrics {
             .header("Content-Type", encoder.format_type())
             .body(Full::<Bytes>::from(Bytes::from(buffer)))
             .unwrap();
-        let res = res.map(|body| full_to_stream_body(body));
-        res
+        res.map(full_to_stream_body)
     }
 }
